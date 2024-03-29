@@ -1,0 +1,262 @@
+Final test queries :
+Target table (Prof/dental)
+
+
+SELECT 
+CLAIM_ID,LINE_NBR,
+ enc_li_sts_cd,enc_claim_status_cd
+ FROM
+ 
+(SELECT CLAIM_ID,LINE_NBR,
+PERSON_ID,    
+enc_li_sts_cd,
+enc_claim_status_cd,
+C_ID_CD,
+row_number() over (partition BY CLAIM_ID,LINE_NBR order by PERSON_ID DESC)rn
+FROM DW_APP.DSS_MED_CLM_TST
+  ) v
+WHERE v.rn=1 and  v.C_ID_CD in ('60','63')
+
+AND
+v.CLAIM_ID IN (
+
+'23361500464470520',
+'23361500464463170',
+'23361500464463180',
+'23361500464463190',
+'23361500464463200',
+'23361500464463210',
+'23361500464463220',
+'24008500464699100',
+'24023500464993160') ORDER BY v.CLAIM_ID,v.LINE_NBR;
+
+Source query used in dss extracts:Prof/dental
+
+
+--subquery to fetch header rows from claim encounter
+WITH clmenchdr as
+(
+select row_number() over (partition by cleh.clm_hdr_mstr_pd_dt, cleh.mbr_sys_id, cleh.tcn_nbr, cleh.li_nbr
+    order by cleh.clm_hdr_mstr_pd_dt, cleh.mbr_sys_id, cleh.tcn_nbr, cleh.li_nbr) rn,
+    cleh.*
+from dhs_mmis_dw_tgt.clm_encounter cleh
+cross join dss_parm_test dss
+where
+cleh.clm_hdr_mstr_pd_dt between trim(dss.DSS_START_DT) and trim(dss.DSS_END_DT) and
+cleh.etl_src_sys_dlt_ind = 'N'
+and cleh.etl_actv_ind = 'Y'
+and cleh.li_nbr = 0
+
+)
+
+SELECT DISTINCT 
+chp.tcn_nbr as claim_id,
+CLI.LI_NBR as Line_nbr,
+clenchdr.clm_enc_claim_status_cd as enc_claim_status_cd, --header
+clmenc.clm_enc_li_sts_cd as enc_li_sts_cd
+
+FROM
+--claim header parent - parent to both Pharmacy and Medical Claims
+CLM_HDR_PARNT CHP
+cross join dss_parm_test dss
+
+--claim header - 1-1 with claim header parent - only clehor non-Pharmacy claims
+INNER JOIN CLM_HDR CLH ON
+(CHP.MBR_SYS_ID = CLH.MBR_SYS_ID AND CHP.TCN_NBR = CLH.TCN_NBR AND CHP.CLM_HDR_MSTR_PD_DT = CLH.CLM_HDR_MSTR_PD_DT
+AND CLH.ETL_SRC_SYS_DLT_IND = 'N'
+AND CLH.CLM_HDR_MSTR_PD_DT BETWEEN trim(DSS.DSS_START_DT) AND trim(DSS.DSS_END_DT)
+AND CLH.ETL_ACTV_IND = 'Y'
+--AND (trim(DSS.DSS_END_DT) BETWEEN CLH.CLM_HDR_ETL_Eclehcleh_DT AND CLH.ETL_EXP_DT)
+)
+LEFT OUTER JOIN CLM_LI CLI ON
+(CHP.MBR_SYS_ID = CLI.MBR_SYS_ID AND CHP.TCN_NBR = CLI.TCN_NBR AND CHP.CLM_HDR_MSTR_PD_DT = CLI.CLM_HDR_MSTR_PD_DT
+AND CLI.ETL_SRC_SYS_DLT_IND = 'N'
+AND CLI.CLM_HDR_MSTR_PD_DT BETWEEN trim(DSS.DSS_START_DT) AND trim(DSS.DSS_END_DT)
+AND CLI.ETL_ACTV_IND = 'Y'
+--AND (trim(DSS.DSS_END_DT) BETWEEN CLI.CLM_LI_ETL_Eclehcleh_DT AND CLI.ETL_EXP_DT)
+)
+
+LEFT outer join dhs_mmis_dw_tgt.clm_encounter clmenc ON
+(CHP.MBR_SYS_ID = clmenc.MBR_SYS_ID AND CHP.TCN_NBR = clmenc.TCN_NBR AND CHP.CLM_HDR_MSTR_PD_DT = clmenc.CLM_HDR_MSTR_PD_DT
+AND CLI.LI_NBR = clmenc.LI_NBR
+AND clmenc.ETL_SRC_SYS_DLT_IND = 'N'
+and clmenc.ETL_ACTV_IND = 'Y'
+AND clmenc.CLM_HDR_MSTR_PD_DT BETWEEN trim(DSS.DSS_START_DT) AND trim(DSS.DSS_END_DT))
+
+LEFT outer join clmenchdr clenchdr ON
+(CHP.MBR_SYS_ID = clenchdr.MBR_SYS_ID AND CHP.TCN_NBR = clenchdr.TCN_NBR AND CHP.CLM_HDR_MSTR_PD_DT = clenchdr.CLM_HDR_MSTR_PD_DT
+
+AND clenchdr.rn = 1
+
+)
+
+WHERE
+--Prof and Dental claims
+CLH.CLM_ID_CD IN ('60','63') and CHP.ETL_SRC_SYS_DLT_IND = 'N' AND CHP.ETL_ACTV_IND ='Y'
+and CHP.CLM_HDR_MSTR_PD_DT between trim(DSS.DSS_START_DT) AND trim(DSS.DSS_END_DT)
+
+and clh.TCN_NBR IN (
+'23361500464470520',
+'23361500464463170',
+'23361500464463180',
+'23361500464463190',
+'23361500464463200',
+'23361500464463210',
+'23361500464463220',
+'24008500464699100',
+'24023500464993160')
+) order by chp.tcn_nbr;
+
+
+Target query tested for facility header :
+
+SELECT 
+CLAIM_ID,LINE_NBR,
+ enc_li_sts_cd,enc_claim_status_cd
+ FROM
+ 
+(SELECT CLAIM_ID,LINE_NBR,
+PERSON_ID,
+C_ID_CD,
+enc_li_sts_cd,
+enc_claim_status_cd,
+row_number() over (partition BY CLAIM_ID,LINE_NBR order by PERSON_ID DESC)rn
+FROM DW_APP.DSS_MED_CLM_TST
+  ) v
+WHERE v.rn=1 and v.LINE_NBR=0 and
+v.C_ID_CD in ('61')
+and v.CLAIM_ID IN (
+'23361500473788750',
+'23361500473788830',
+'23361500473788841',
+'23361500473788930',
+'23361500473788950',
+'23361500473788970',
+'23361500473789221',
+'23361500473789290',
+'23361500473789320')
+
+Target query for facility(lines>0):
+
+SELECT 
+CLAIM_ID,LINE_NBR,
+ enc_li_sts_cd,enc_claim_status_cd
+ FROM
+ 
+(SELECT CLAIM_ID,LINE_NBR,
+PERSON_ID,
+C_ID_CD,
+enc_li_sts_cd,
+enc_claim_status_cd,
+row_number() over (partition BY CLAIM_ID,LINE_NBR order by PERSON_ID DESC)rn
+FROM DW_APP.DSS_MED_CLM_TST
+  ) v
+WHERE v.rn=1 and v.LINE_NBR > 0 and
+v.C_ID_CD in ('61')
+and v.ENC_LI_STS_CD is not null
+
+and v.CLAIM_ID IN (
+'23361500473780760',
+'23361500473780770',
+'23361500473780801',
+'23361500473780821',
+'23361500473780930');
+
+
+Source query for facility claims:
+
+
+WITH clmenchdr as
+(
+select row_number() over (partition by cleh.clm_hdr_mstr_pd_dt, cleh.mbr_sys_id, cleh.tcn_nbr, cleh.li_nbr
+    order by cleh.clm_hdr_mstr_pd_dt, cleh.mbr_sys_id, cleh.tcn_nbr, cleh.li_nbr) rn,
+    cleh.*
+from dhs_mmis_dw_tgt.clm_encounter cleh
+cross join dss_parm_test dss
+where
+cleh.clm_hdr_mstr_pd_dt between trim(dss.DSS_START_DT) and trim(dss.DSS_END_DT) and
+cleh.etl_src_sys_dlt_ind = 'N'
+and cleh.etl_actv_ind = 'Y'
+and cleh.li_nbr = 0
+
+)
+
+SELECT DISTINCT 
+chp.tcn_nbr as claim_id,
+CLI.LI_NBR as Line_nbr,
+clenchdr.clm_enc_claim_status_cd as enc_claim_status_cd, --header
+clmenc.clm_enc_li_sts_cd as enc_li_sts_cd
+
+FROM 
+
+--claim header parent - parent to both Pharmacy and Medical Claims
+    clm_hdr_parnt                        chp
+    CROSS JOIN dss_parm_test                             dss
+
+--claim header - 1-1 with claim header parent - only for non-Pharmacy claims
+    INNER JOIN clm_hdr                              clh ON ( chp.mbr_sys_id = clh.mbr_sys_id
+                                AND chp.tcn_nbr = clh.tcn_nbr
+                                AND chp.clm_hdr_mstr_pd_dt = clh.clm_hdr_mstr_pd_dt
+                                AND clh.etl_src_sys_dlt_ind = 'N'
+                                AND clh.etl_actv_ind = 'Y'
+                                AND clh.clm_hdr_mstr_pd_dt BETWEEN trim(dss.dss_start_dt) AND trim(dss.DSS_END_DT))
+
+LEFT OUTER JOIN clm_li                               cli ON ( chp.mbr_sys_id = cli.mbr_sys_id
+                                    AND chp.tcn_nbr = cli.tcn_nbr
+                                    AND chp.clm_hdr_mstr_pd_dt = cli.clm_hdr_mstr_pd_dt
+                                    AND cli.etl_src_sys_dlt_ind = 'N'
+                                    AND cli.etl_actv_ind = 'Y'
+                                    AND cli.clm_hdr_mstr_pd_dt BETWEEN trim(dss.dss_start_dt) AND trim(dss.DSS_END_DT))
+                                    
+LEFT outer join dhs_mmis_dw_tgt.clm_encounter clmenc ON
+(CHP.MBR_SYS_ID = clmenc.MBR_SYS_ID AND CHP.TCN_NBR = clmenc.TCN_NBR AND CHP.CLM_HDR_MSTR_PD_DT = clmenc.CLM_HDR_MSTR_PD_DT
+AND CLI.LI_NBR = clmenc.LI_NBR
+AND clmenc.ETL_SRC_SYS_DLT_IND = 'N'
+and clmenc.ETL_ACTV_IND = 'Y'
+AND clmenc.CLM_HDR_MSTR_PD_DT BETWEEN trim(DSS.DSS_START_DT) AND trim(DSS.DSS_END_DT))
+
+LEFT outer join clmenchdr clenchdr ON
+(CHP.MBR_SYS_ID = clenchdr.MBR_SYS_ID AND CHP.TCN_NBR = clenchdr.TCN_NBR AND CHP.CLM_HDR_MSTR_PD_DT = clenchdr.CLM_HDR_MSTR_PD_DT
+
+AND clenchdr.rn = 1
+
+)                                    
+
+WHERE 
+--Facility Claims
+    clh.clm_id_cd = '61' AND chp.etl_src_sys_dlt_ind = 'N' AND chp.etl_actv_ind = 'Y'
+    AND chp.clm_hdr_mstr_pd_dt BETWEEN trim(dss.dss_start_dt) AND trim(dss.DSS_END_DT)
+    
+    and chp.tcn_nbr IN (
+    '23361500473788750',
+'23361500473788830',
+'23361500473788841',
+'23361500473788930',
+'23361500473788950',
+'23361500473788970',
+'23361500473789221',
+'23361500473789290',
+'23361500473789320',
+'23361500473780760',
+'23361500473780770',
+'23361500473780801',
+'23361500473780821',
+'23361500473780930');
+
+
+left outer join DHS_MMIS_DW_TGT.CLM_OTHER_CLM_ID_TB clot ON
+(CHP.MBR_SYS_ID = clot.MBR_SYS_ID AND 
+CHP.TCN_NBR = clot.TCN_NBR AND 
+CHP.CLM_HDR_MSTR_PD_DT = clot.CLM_HDR_MSTR_PD_DT
+AND clot.ETL_SRC_SYS_DLT_IND = 'N'
+and clot.ETL_ACTV_IND = 'Y'
+AND clot.CLM_HDR_MSTR_PD_DT BETWEEN trim(DSS.DSS_START_DT) AND trim(DSS.DSS_END_DT))
+
+
+
+
+
+
+
+
+ 
